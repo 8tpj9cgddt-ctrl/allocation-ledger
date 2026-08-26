@@ -1,0 +1,6 @@
+node_modules/.bin/baseline-browser-mapping
+node_modules/.bin/browserslist
+/node_modules
+.env
+.env.example
+.gitignore.rtf
