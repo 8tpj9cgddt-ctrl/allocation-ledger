@@ -101,7 +101,6 @@ function Login() {
 function BottomNav({ page, setPage }) {
   const items = [
     { id: "home", label: "Home", Icon: IconHome },
-    { id: "goals", label: "Goals", Icon: IconTarget },
     { id: "todos", label: "To-do", Icon: IconCheck },
     { id: "reminders", label: "Reminders", Icon: IconBell },
   ];
@@ -142,8 +141,9 @@ function Ledger({ userId }) {
   const [flash, setFlash] = useState(null);
   const [error, setError] = useState("");
   const [page, setPage] = useState("home");
-  const [goalDrafts, setGoalDrafts] = useState({});
-  const [goalSaved, setGoalSaved] = useState(null);
+  const [goalTarget, setGoalTarget] = useState(null);
+  const [goalDraft, setGoalDraft] = useState("");
+  const [goalSaved, setGoalSaved] = useState(false);
   const [newTodoText, setNewTodoText] = useState("");
   const [newReminderText, setNewReminderText] = useState("");
   const [newReminderDate, setNewReminderDate] = useState("");
@@ -183,13 +183,17 @@ function Ledger({ userId }) {
       .select("*")
       .order("due_date", { ascending: true, nullsFirst: false });
 
+    const { data: goalRow } = await supabase
+      .from("user_goal")
+      .select("*")
+      .maybeSingle();
+
     setCategories(cats || []);
     setEntries(ents || []);
     setTodos(td || []);
     setReminders(rm || []);
-    const gd = {};
-    (cats || []).forEach((c) => (gd[c.id] = c.goal ?? ""));
-    setGoalDrafts(gd);
+    setGoalTarget(goalRow ? goalRow.target : null);
+    setGoalDraft(goalRow && goalRow.target != null ? String(goalRow.target) : "");
     setLoading(false);
   }
 
@@ -302,14 +306,16 @@ function Ledger({ userId }) {
     setEntries([]);
   }
 
-  async function saveGoal(categoryId) {
-    const val = parseFloat(goalDrafts[categoryId]);
-    const goalValue = isNaN(val) ? null : val;
-    const { error: updateError } = await supabase.from("categories").update({ goal: goalValue }).eq("id", categoryId);
-    if (!updateError) {
-      setCategories(categories.map((c) => (c.id === categoryId ? { ...c, goal: goalValue } : c)));
-      setGoalSaved(categoryId);
-      setTimeout(() => setGoalSaved(null), 1500);
+  async function saveGoal() {
+    const val = parseFloat(goalDraft);
+    const target = isNaN(val) ? null : val;
+    const { error: upsertError } = await supabase
+      .from("user_goal")
+      .upsert({ user_id: userId, target }, { onConflict: "user_id" });
+    if (!upsertError) {
+      setGoalTarget(target);
+      setGoalSaved(true);
+      setTimeout(() => setGoalSaved(false), 1500);
     }
   }
 
@@ -430,6 +436,39 @@ function Ledger({ userId }) {
                 {categories.map((c) => `${c.label} $${formatMoney(flash.split[c.id])}`).join("  ·  ")}
               </div>
             )}
+
+            <div className="mb-8 p-4 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
+              <h2 className="text-xs uppercase tracking-widest mb-3" style={{ color: "#6B6355" }}>Overall goal</h2>
+              {goalTarget ? (
+                <>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="num">${formatMoney(grandTotal)} / ${formatMoney(goalTarget)}</span>
+                    <span style={{ color: "#6B6355" }}>{Math.min(Math.round((grandTotal / goalTarget) * 100), 100)}%</span>
+                  </div>
+                  <div className="h-2 rounded-full w-full mb-3" style={{ background: "#E4DCC8" }}>
+                    <div className="bar-fill h-2 rounded-full" style={{ width: `${Math.min((grandTotal / goalTarget) * 100, 100)}%`, background: "#2F4550" }} />
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm mb-3" style={{ color: "#8A8272" }}>No goal set yet.</p>
+              )}
+              <div className="flex items-center gap-2">
+                <span className="text-sm">$</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={goalDraft}
+                  onChange={(e) => setGoalDraft(e.target.value)}
+                  placeholder="Set a target"
+                  className="w-32 num bg-transparent border-b-2 py-1 text-sm"
+                  style={{ borderColor: "#2A2620" }}
+                />
+                <button onClick={saveGoal} className="px-3 py-1 rounded-sm text-xs" style={{ background: "#2F4550", color: "#F4F0E6" }}>
+                  {goalSaved ? "Saved ✓" : "Save"}
+                </button>
+              </div>
+            </div>
 
             {grandTotal > 0 && (
               <div className="mb-8 p-4 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
@@ -555,54 +594,6 @@ function Ledger({ userId }) {
             <button onClick={() => supabase.auth.signOut()} className="mt-10 text-xs underline" style={{ color: "#6B6355" }}>
               Sign out
             </button>
-          </>
-        )}
-
-        {page === "goals" && (
-          <>
-            <div className="mb-8">
-              <h1 className="text-2xl tracking-tight">Savings goals</h1>
-              <p className="text-sm mt-1" style={{ color: "#6B6355" }}>Set a target for any category and watch progress fill in.</p>
-            </div>
-            <div className="space-y-5">
-              {categories.map((c) => {
-                const current = totals[c.id] || 0;
-                const goal = Number(c.goal) || 0;
-                const pct = goal > 0 ? Math.min((current / goal) * 100, 100) : 0;
-                return (
-                  <div key={c.id} className="p-4 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
-                    <div className="flex justify-between items-center mb-2">
-                      <span style={{ color: c.color, fontWeight: 600 }}>{c.label}</span>
-                      <span className="num text-sm">${formatMoney(current)}{goal > 0 ? ` / $${formatMoney(goal)}` : ""}</span>
-                    </div>
-                    <div className="h-2 rounded-full w-full mb-3" style={{ background: "#E4DCC8" }}>
-                      <div className="bar-fill h-2 rounded-full" style={{ width: `${pct}%`, background: c.color }} />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs" style={{ color: "#6B6355" }}>Goal:</span>
-                      <span className="text-sm">$</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={goalDrafts[c.id] ?? ""}
-                        onChange={(e) => setGoalDrafts({ ...goalDrafts, [c.id]: e.target.value })}
-                        placeholder="No goal set"
-                        className="w-28 num bg-transparent border-b-2 py-1 text-sm"
-                        style={{ borderColor: "#2A2620" }}
-                      />
-                      <button
-                        onClick={() => saveGoal(c.id)}
-                        className="px-3 py-1 rounded-sm text-xs"
-                        style={{ background: "#2F4550", color: "#F4F0E6" }}
-                      >
-                        {goalSaved === c.id ? "Saved ✓" : "Save"}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
           </>
         )}
 
