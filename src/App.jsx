@@ -73,9 +73,6 @@ function Ledger({ userId }) {
   const [draftCats, setDraftCats] = useState([]);
   const [flash, setFlash] = useState(null);
   const [error, setError] = useState("");
-  const [page, setPage] = useState("home"); // "home" | "goals"
-  const [goalDrafts, setGoalDrafts] = useState({});
-  const [goalSaved, setGoalSaved] = useState(null);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -104,21 +101,7 @@ function Ledger({ userId }) {
 
     setCategories(cats || []);
     setEntries(ents || []);
-    const gd = {};
-    (cats || []).forEach((c) => (gd[c.id] = c.goal ?? ""));
-    setGoalDrafts(gd);
     setLoading(false);
-  }
-
-  async function saveGoal(categoryId) {
-    const val = parseFloat(goalDrafts[categoryId]);
-    const goalValue = isNaN(val) ? null : val;
-    const { error: updateError } = await supabase.from("categories").update({ goal: goalValue }).eq("id", categoryId);
-    if (!updateError) {
-      setCategories(categories.map((c) => (c.id === categoryId ? { ...c, goal: goalValue } : c)));
-      setGoalSaved(categoryId);
-      setTimeout(() => setGoalSaved(null), 1500);
-    }
   }
 
   const totals = useMemo(() => {
@@ -253,33 +236,6 @@ function Ledger({ userId }) {
       `}</style>
 
       <div className="max-w-2xl mx-auto px-5 py-10">
-        <div className="flex gap-2 mb-6">
-          <button
-            onClick={() => setPage("home")}
-            className="px-4 py-1.5 rounded-sm text-sm"
-            style={{
-              background: page === "home" ? "#2F4550" : "transparent",
-              color: page === "home" ? "#F4F0E6" : "#2F4550",
-              border: "1px solid #2F4550",
-            }}
-          >
-            Home
-          </button>
-          <button
-            onClick={() => setPage("goals")}
-            className="px-4 py-1.5 rounded-sm text-sm"
-            style={{
-              background: page === "goals" ? "#2F4550" : "transparent",
-              color: page === "goals" ? "#F4F0E6" : "#2F4550",
-              border: "1px solid #2F4550",
-            }}
-          >
-            Goals
-          </button>
-        </div>
-
-        {page === "home" && (
-        <>
         <div className="flex items-baseline justify-between border-b-2 pb-4 mb-8" style={{ borderColor: "#2A2620" }}>
           <div>
             <h1 className="text-3xl tracking-tight">Allocation Ledger</h1>
@@ -440,56 +396,6 @@ function Ledger({ userId }) {
             </div>
           )}
         </div>
-        </>
-        )}
-
-        {page === "goals" && (
-          <div className="mb-8">
-            <div className="mb-5">
-              <h1 className="text-2xl tracking-tight">Savings goals</h1>
-              <p className="text-sm mt-1" style={{ color: "#6B6355" }}>Set a target for any category and watch progress fill in.</p>
-            </div>
-            <div className="space-y-5">
-              {categories.map((c) => {
-                const current = totals[c.id] || 0;
-                const goal = Number(c.goal) || 0;
-                const pct = goal > 0 ? Math.min((current / goal) * 100, 100) : 0;
-                return (
-                  <div key={c.id} className="p-4 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
-                    <div className="flex justify-between items-center mb-2">
-                      <span style={{ color: c.color, fontWeight: 600 }}>{c.label}</span>
-                      <span className="num text-sm">${formatMoney(current)}{goal > 0 ? ` / $${formatMoney(goal)}` : ""}</span>
-                    </div>
-                    <div className="h-2 rounded-full w-full mb-3" style={{ background: "#E4DCC8" }}>
-                      <div className="bar-fill h-2 rounded-full" style={{ width: `${pct}%`, background: c.color }} />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs" style={{ color: "#6B6355" }}>Goal:</span>
-                      <span className="text-sm">$</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={goalDrafts[c.id] ?? ""}
-                        onChange={(e) => setGoalDrafts({ ...goalDrafts, [c.id]: e.target.value })}
-                        placeholder="No goal set"
-                        className="w-28 num bg-transparent border-b-2 py-1 text-sm"
-                        style={{ borderColor: "#2A2620" }}
-                      />
-                      <button
-                        onClick={() => saveGoal(c.id)}
-                        className="px-3 py-1 rounded-sm text-xs"
-                        style={{ background: "#2F4550", color: "#F4F0E6" }}
-                      >
-                        {goalSaved === c.id ? "Saved ✓" : "Save"}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
         <button onClick={() => supabase.auth.signOut()} className="mt-10 text-xs underline" style={{ color: "#6B6355" }}>
           Sign out
