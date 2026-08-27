@@ -10,6 +10,8 @@ const DEFAULT_CATEGORIES = [
 
 const PALETTE = ["#8A6D3B", "#5C6F52", "#2F4550", "#A2543E", "#6B5B95", "#3D5A6C", "#7A5230", "#4E6E58"];
 
+const ASSET_TYPES = ["Stocks", "ETF", "REIT", "ASNB/unit trust", "Fixed deposit", "Cash/savings", "Other"];
+
 function formatMoney(n) {
   const v = Number(n) || 0;
   return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -24,15 +26,6 @@ function IconHome(props) {
     </svg>
   );
 }
-function IconTarget(props) {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <circle cx="12" cy="12" r="9" />
-      <circle cx="12" cy="12" r="5" />
-      <circle cx="12" cy="12" r="1" />
-    </svg>
-  );
-}
 function IconCheck(props) {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -41,11 +34,11 @@ function IconCheck(props) {
     </svg>
   );
 }
-function IconBell(props) {
+function IconTrend(props) {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M6 8a6 6 0 0 1 12 0c0 4 1.5 5.5 2 6H4c.5-.5 2-2 2-6Z" />
-      <path d="M10 20a2 2 0 0 0 4 0" />
+      <path d="M3 17 9 11l4 4 8-8" />
+      <path d="M15 7h6v6" />
     </svg>
   );
 }
@@ -102,7 +95,7 @@ function BottomNav({ page, setPage }) {
   const items = [
     { id: "home", label: "Home", Icon: IconHome },
     { id: "todos", label: "To-do", Icon: IconCheck },
-    { id: "reminders", label: "Reminders", Icon: IconBell },
+    { id: "networth", label: "Net worth", Icon: IconTrend },
   ];
   return (
     <div
@@ -132,7 +125,7 @@ function Ledger({ userId }) {
   const [categories, setCategories] = useState([]);
   const [entries, setEntries] = useState([]);
   const [todos, setTodos] = useState([]);
-  const [reminders, setReminders] = useState([]);
+  const [holdings, setHoldings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [amount, setAmount] = useState("");
   const [source, setSource] = useState("");
@@ -145,8 +138,8 @@ function Ledger({ userId }) {
   const [goalDraft, setGoalDraft] = useState("");
   const [goalSaved, setGoalSaved] = useState(false);
   const [newTodoText, setNewTodoText] = useState("");
-  const [newReminderText, setNewReminderText] = useState("");
-  const [newReminderDate, setNewReminderDate] = useState("");
+  const [newHolding, setNewHolding] = useState({ type: "Stocks", customType: "", name: "", invested: "", currentValue: "" });
+  const [holdingEdits, setHoldingEdits] = useState({});
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -178,10 +171,10 @@ function Ledger({ userId }) {
       .select("*")
       .order("created_at", { ascending: false });
 
-    const { data: rm } = await supabase
-      .from("reminders_local")
+    const { data: hd } = await supabase
+      .from("net_worth_holdings")
       .select("*")
-      .order("due_date", { ascending: true, nullsFirst: false });
+      .order("created_at", { ascending: true });
 
     const { data: goalRow } = await supabase
       .from("user_goal")
@@ -191,7 +184,7 @@ function Ledger({ userId }) {
     setCategories(cats || []);
     setEntries(ents || []);
     setTodos(td || []);
-    setReminders(rm || []);
+    setHoldings(hd || []);
     setGoalTarget(goalRow ? goalRow.target : null);
     setGoalDraft(goalRow && goalRow.target != null ? String(goalRow.target) : "");
     setLoading(false);
@@ -342,36 +335,49 @@ function Ledger({ userId }) {
     setTodos(todos.filter((t) => t.id !== id));
   }
 
-  async function addReminder(e) {
+  async function addHolding(e) {
     e.preventDefault();
-    if (!newReminderText.trim()) return;
+    const finalType = newHolding.type === "Other" ? newHolding.customType.trim() : newHolding.type;
+    if (!finalType || !newHolding.name.trim()) return;
+    const invested = parseFloat(newHolding.invested) || 0;
+    const currentValue = parseFloat(newHolding.currentValue) || 0;
     const { data, error: insertError } = await supabase
-      .from("reminders_local")
-      .insert({ user_id: userId, text: newReminderText.trim(), due_date: newReminderDate || null, done: false })
+      .from("net_worth_holdings")
+      .insert({ user_id: userId, asset_type: finalType, name: newHolding.name.trim(), invested, current_value: currentValue })
       .select();
     if (!insertError && data) {
-      const updated = [...reminders, data[0]].sort((a, b) => {
-        if (!a.due_date) return 1;
-        if (!b.due_date) return -1;
-        return new Date(a.due_date) - new Date(b.due_date);
-      });
-      setReminders(updated);
-      setNewReminderText("");
-      setNewReminderDate("");
+      setHoldings([...holdings, data[0]]);
+      setNewHolding({ type: "Stocks", customType: "", name: "", invested: "", currentValue: "" });
     }
   }
 
-  async function toggleReminder(id, done) {
-    await supabase.from("reminders_local").update({ done: !done }).eq("id", id);
-    setReminders(reminders.map((r) => (r.id === id ? { ...r, done: !done } : r)));
+  async function updateHoldingValue(id) {
+    const val = parseFloat(holdingEdits[id]);
+    if (isNaN(val)) return;
+    await supabase.from("net_worth_holdings").update({ current_value: val }).eq("id", id);
+    setHoldings(holdings.map((h) => (h.id === id ? { ...h, current_value: val } : h)));
+    setHoldingEdits({ ...holdingEdits, [id]: undefined });
   }
 
-  async function deleteReminder(id) {
-    await supabase.from("reminders_local").delete().eq("id", id);
-    setReminders(reminders.filter((r) => r.id !== id));
+  async function deleteHolding(id) {
+    await supabase.from("net_worth_holdings").delete().eq("id", id);
+    setHoldings(holdings.filter((h) => h.id !== id));
   }
 
   const draftSum = pctSum(draftCats);
+
+  const holdingsByType = useMemo(() => {
+    const groups = {};
+    holdings.forEach((h) => {
+      if (!groups[h.asset_type]) groups[h.asset_type] = [];
+      groups[h.asset_type].push(h);
+    });
+    return groups;
+  }, [holdings]);
+
+  const netWorthTotal = holdings.reduce((a, h) => a + Number(h.current_value || 0), 0);
+  const investedTotal = holdings.reduce((a, h) => a + Number(h.invested || 0), 0);
+  const overallGain = netWorthTotal - investedTotal;
 
   if (loading) {
     return (
@@ -390,7 +396,7 @@ function Ledger({ userId }) {
         }
         @keyframes flashIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
         .num { font-family: 'Courier New', Courier, monospace; font-variant-numeric: tabular-nums; }
-        input:focus, button:focus { outline: 2px solid #2F4550; outline-offset: 2px; }
+        input:focus, button:focus, select:focus { outline: 2px solid #2F4550; outline-offset: 2px; }
       `}</style>
 
       <div className="max-w-2xl mx-auto px-5 py-10" style={{ paddingBottom: "88px" }}>
@@ -408,27 +414,62 @@ function Ledger({ userId }) {
               </div>
             </div>
 
-            <form onSubmit={handleSplit} className="mb-8 p-5 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
-              <div className="flex gap-3 flex-wrap items-end">
-                <div className="flex-1 min-w-[140px]">
-                  <label className="block text-xs uppercase tracking-widest mb-1" style={{ color: "#6B6355" }}>Amount received</label>
-                  <div className="flex items-center">
-                    <span className="text-xl mr-1">$</span>
-                    <input ref={inputRef} type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="500"
-                      className="w-full text-xl num bg-transparent border-b-2 py-1" style={{ borderColor: "#2A2620" }} />
+            <div className="flex gap-4 flex-wrap mb-8 items-stretch">
+              <form onSubmit={handleSplit} className="flex-1 min-w-[260px] p-5 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
+                <div className="flex gap-3 flex-wrap items-end">
+                  <div className="flex-1 min-w-[120px]">
+                    <label className="block text-xs uppercase tracking-widest mb-1" style={{ color: "#6B6355" }}>Amount received</label>
+                    <div className="flex items-center">
+                      <span className="text-xl mr-1">$</span>
+                      <input ref={inputRef} type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="500"
+                        className="w-full text-xl num bg-transparent border-b-2 py-1" style={{ borderColor: "#2A2620" }} />
+                    </div>
                   </div>
+                  <div className="flex-1 min-w-[120px]">
+                    <label className="block text-xs uppercase tracking-widest mb-1" style={{ color: "#6B6355" }}>Source (optional)</label>
+                    <input type="text" value={source} onChange={(e) => setSource(e.target.value)} placeholder="Allowance, part-time..."
+                      className="w-full text-base bg-transparent border-b-2 py-1" style={{ borderColor: "#2A2620" }} />
+                  </div>
+                  <button type="submit" className="px-5 py-2 rounded-sm text-sm tracking-wide" style={{ background: "#2F4550", color: "#F4F0E6" }}>
+                    Split it
+                  </button>
                 </div>
-                <div className="flex-1 min-w-[140px]">
-                  <label className="block text-xs uppercase tracking-widest mb-1" style={{ color: "#6B6355" }}>Source (optional)</label>
-                  <input type="text" value={source} onChange={(e) => setSource(e.target.value)} placeholder="Allowance, part-time..."
-                    className="w-full text-base bg-transparent border-b-2 py-1" style={{ borderColor: "#2A2620" }} />
+                {!editingPct && error && <div className="mt-3 text-sm" style={{ color: "#A23E3E" }}>{error}</div>}
+              </form>
+
+              <div className="flex-1 min-w-[260px] p-4 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
+                <h2 className="text-xs uppercase tracking-widest mb-3" style={{ color: "#6B6355" }}>Overall goal</h2>
+                {goalTarget ? (
+                  <>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="num">${formatMoney(grandTotal)} / ${formatMoney(goalTarget)}</span>
+                      <span style={{ color: "#6B6355" }}>{Math.min(Math.round((grandTotal / goalTarget) * 100), 100)}%</span>
+                    </div>
+                    <div className="h-2 rounded-full w-full mb-3" style={{ background: "#E4DCC8" }}>
+                      <div className="bar-fill h-2 rounded-full" style={{ width: `${Math.min((grandTotal / goalTarget) * 100, 100)}%`, background: "#2F4550" }} />
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm mb-3" style={{ color: "#8A8272" }}>No goal set yet.</p>
+                )}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">$</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={goalDraft}
+                    onChange={(e) => setGoalDraft(e.target.value)}
+                    placeholder="Set a target"
+                    className="w-28 num bg-transparent border-b-2 py-1 text-sm"
+                    style={{ borderColor: "#2A2620" }}
+                  />
+                  <button onClick={saveGoal} className="px-3 py-1 rounded-sm text-xs" style={{ background: "#2F4550", color: "#F4F0E6" }}>
+                    {goalSaved ? "Saved ✓" : "Save"}
+                  </button>
                 </div>
-                <button type="submit" className="px-5 py-2 rounded-sm text-sm tracking-wide" style={{ background: "#2F4550", color: "#F4F0E6" }}>
-                  Split it
-                </button>
               </div>
-              {!editingPct && error && <div className="mt-3 text-sm" style={{ color: "#A23E3E" }}>{error}</div>}
-            </form>
+            </div>
 
             {flash && (
               <div className="flash-in mb-8 p-4 rounded-sm text-sm" style={{ background: "#EFE9D8", border: "1px dashed #2A2620" }}>
@@ -436,39 +477,6 @@ function Ledger({ userId }) {
                 {categories.map((c) => `${c.label} $${formatMoney(flash.split[c.id])}`).join("  ·  ")}
               </div>
             )}
-
-            <div className="mb-8 p-4 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
-              <h2 className="text-xs uppercase tracking-widest mb-3" style={{ color: "#6B6355" }}>Overall goal</h2>
-              {goalTarget ? (
-                <>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="num">${formatMoney(grandTotal)} / ${formatMoney(goalTarget)}</span>
-                    <span style={{ color: "#6B6355" }}>{Math.min(Math.round((grandTotal / goalTarget) * 100), 100)}%</span>
-                  </div>
-                  <div className="h-2 rounded-full w-full mb-3" style={{ background: "#E4DCC8" }}>
-                    <div className="bar-fill h-2 rounded-full" style={{ width: `${Math.min((grandTotal / goalTarget) * 100, 100)}%`, background: "#2F4550" }} />
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm mb-3" style={{ color: "#8A8272" }}>No goal set yet.</p>
-              )}
-              <div className="flex items-center gap-2">
-                <span className="text-sm">$</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={goalDraft}
-                  onChange={(e) => setGoalDraft(e.target.value)}
-                  placeholder="Set a target"
-                  className="w-32 num bg-transparent border-b-2 py-1 text-sm"
-                  style={{ borderColor: "#2A2620" }}
-                />
-                <button onClick={saveGoal} className="px-3 py-1 rounded-sm text-xs" style={{ background: "#2F4550", color: "#F4F0E6" }}>
-                  {goalSaved ? "Saved ✓" : "Save"}
-                </button>
-              </div>
-            </div>
 
             {grandTotal > 0 && (
               <div className="mb-8 p-4 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
@@ -644,71 +652,130 @@ function Ledger({ userId }) {
           </>
         )}
 
-        {page === "reminders" && (
+        {page === "networth" && (
           <>
-            <div className="mb-8">
-              <h1 className="text-2xl tracking-tight">Reminders</h1>
-              <p className="text-sm mt-1" style={{ color: "#6B6355" }}>
-                A simple list for now — check this page for what's coming up. (Phone notifications aren't set up yet.)
-              </p>
+            <div className="mb-6">
+              <h1 className="text-2xl tracking-tight">Net worth</h1>
+              <p className="text-sm mt-1" style={{ color: "#6B6355" }}>Everything you've invested, tracked by type.</p>
             </div>
 
-            <form onSubmit={addReminder} className="mb-6 space-y-2">
+            <div className="mb-6 p-4 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
+              <div className="flex justify-between text-sm mb-1">
+                <span style={{ color: "#6B6355" }}>Total current value</span>
+                <span className="num text-lg" style={{ color: "#2F4550" }}>${formatMoney(netWorthTotal)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span style={{ color: "#6B6355" }}>Invested ${formatMoney(investedTotal)}</span>
+                <span className="num" style={{ color: overallGain >= 0 ? "#5C6F52" : "#A23E3E" }}>
+                  {overallGain >= 0 ? "+" : "-"}${formatMoney(Math.abs(overallGain))} {investedTotal > 0 ? `(${((overallGain / investedTotal) * 100).toFixed(1)}%)` : ""}
+                </span>
+              </div>
+            </div>
+
+            <form onSubmit={addHolding} className="mb-8 p-4 rounded-sm space-y-2" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
+              <div className="flex gap-2 flex-wrap">
+                <select
+                  value={newHolding.type}
+                  onChange={(e) => setNewHolding({ ...newHolding, type: e.target.value })}
+                  className="flex-1 min-w-[120px] text-sm bg-transparent border-b-2 py-2"
+                  style={{ borderColor: "#2A2620" }}
+                >
+                  {ASSET_TYPES.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+                {newHolding.type === "Other" && (
+                  <input
+                    type="text"
+                    value={newHolding.customType}
+                    onChange={(e) => setNewHolding({ ...newHolding, customType: e.target.value })}
+                    placeholder="Type name"
+                    className="flex-1 min-w-[100px] text-sm bg-transparent border-b-2 py-2"
+                    style={{ borderColor: "#2A2620" }}
+                  />
+                )}
+              </div>
               <input
                 type="text"
-                value={newReminderText}
-                onChange={(e) => setNewReminderText(e.target.value)}
-                placeholder="Remind me to..."
-                className="w-full text-base bg-transparent border-b-2 py-2"
+                value={newHolding.name}
+                onChange={(e) => setNewHolding({ ...newHolding, name: e.target.value })}
+                placeholder="Name (e.g. Apple, S&P 500 ETF, Maybank FD)"
+                className="w-full text-sm bg-transparent border-b-2 py-2"
                 style={{ borderColor: "#2A2620" }}
               />
-              <div className="flex gap-2">
-                <input
-                  type="date"
-                  value={newReminderDate}
-                  onChange={(e) => setNewReminderDate(e.target.value)}
-                  className="flex-1 text-sm bg-transparent border-b-2 py-2"
-                  style={{ borderColor: "#2A2620" }}
-                />
+              <div className="flex gap-2 flex-wrap items-end">
+                <div className="flex-1 min-w-[100px]">
+                  <label className="block text-xs uppercase tracking-widest mb-1" style={{ color: "#6B6355" }}>Invested</label>
+                  <div className="flex items-center">
+                    <span className="mr-1">$</span>
+                    <input type="number" min="0" step="0.01" value={newHolding.invested} onChange={(e) => setNewHolding({ ...newHolding, invested: e.target.value })}
+                      className="w-full num bg-transparent border-b-2 py-1 text-sm" style={{ borderColor: "#2A2620" }} />
+                  </div>
+                </div>
+                <div className="flex-1 min-w-[100px]">
+                  <label className="block text-xs uppercase tracking-widest mb-1" style={{ color: "#6B6355" }}>Current value</label>
+                  <div className="flex items-center">
+                    <span className="mr-1">$</span>
+                    <input type="number" min="0" step="0.01" value={newHolding.currentValue} onChange={(e) => setNewHolding({ ...newHolding, currentValue: e.target.value })}
+                      className="w-full num bg-transparent border-b-2 py-1 text-sm" style={{ borderColor: "#2A2620" }} />
+                  </div>
+                </div>
                 <button type="submit" className="px-4 py-2 rounded-sm text-sm" style={{ background: "#2F4550", color: "#F4F0E6" }}>
                   Add
                 </button>
               </div>
             </form>
 
-            {reminders.length === 0 ? (
+            {Object.keys(holdingsByType).length === 0 ? (
               <div className="text-sm py-8 text-center rounded-sm" style={{ color: "#8A8272", border: "1px dashed #DCD4C0" }}>
-                No reminders yet.
+                No holdings yet — add your first one above.
               </div>
             ) : (
-              <div className="space-y-2">
-                {reminders.map((r) => {
-                  const overdue = r.due_date && !r.done && new Date(r.due_date) < new Date(new Date().toDateString());
-                  return (
-                    <div key={r.id} className="flex items-center gap-3 p-3 rounded-sm" style={{ background: "#FFFDF9", border: `1px solid ${overdue ? "#A23E3E" : "#DCD4C0"}` }}>
-                      <button
-                        onClick={() => toggleReminder(r.id, r.done)}
-                        className="w-5 h-5 rounded-sm flex-shrink-0 flex items-center justify-center"
-                        style={{ border: `2px solid ${r.done ? "#5C6F52" : "#2A2620"}`, background: r.done ? "#5C6F52" : "transparent" }}
-                      >
-                        {r.done && <span style={{ color: "#FFFDF9", fontSize: "12px" }}>✓</span>}
-                      </button>
-                      <div className="flex-1">
-                        <div className="text-sm" style={{ textDecoration: r.done ? "line-through" : "none", color: r.done ? "#8A8272" : "#2A2620" }}>
-                          {r.text}
-                        </div>
-                        {r.due_date && (
-                          <div className="text-xs" style={{ color: overdue ? "#A23E3E" : "#8A8272" }}>
-                            {new Date(r.due_date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                            {overdue ? " · overdue" : ""}
-                          </div>
-                        )}
-                      </div>
-                      <button onClick={() => deleteReminder(r.id)} className="text-xs px-1" style={{ color: "#A23E3E" }}>✕</button>
+              Object.entries(holdingsByType).map(([type, items]) => {
+                const sectionTotal = items.reduce((a, h) => a + Number(h.current_value || 0), 0);
+                return (
+                  <div key={type} className="mb-6">
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className="text-xs uppercase tracking-widest" style={{ color: "#6B6355" }}>{type}</h3>
+                      <span className="num text-xs" style={{ color: "#6B6355" }}>${formatMoney(sectionTotal)}</span>
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="space-y-2">
+                      {items.map((h) => {
+                        const gain = Number(h.current_value || 0) - Number(h.invested || 0);
+                        return (
+                          <div key={h.id} className="p-3 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
+                            <div className="flex justify-between items-start mb-1">
+                              <span className="text-sm font-medium">{h.name}</span>
+                              <button onClick={() => deleteHolding(h.id)} className="text-xs px-1" style={{ color: "#A23E3E" }}>✕</button>
+                            </div>
+                            <div className="flex justify-between text-xs mb-2">
+                              <span style={{ color: "#6B6355" }}>Invested ${formatMoney(h.invested)}</span>
+                              <span className="num" style={{ color: gain >= 0 ? "#5C6F52" : "#A23E3E" }}>
+                                {gain >= 0 ? "+" : "-"}${formatMoney(Math.abs(gain))}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs" style={{ color: "#6B6355" }}>Current:</span>
+                              <span className="text-xs">$</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={holdingEdits[h.id] ?? h.current_value}
+                                onChange={(e) => setHoldingEdits({ ...holdingEdits, [h.id]: e.target.value })}
+                                className="w-24 num bg-transparent border-b py-1 text-xs"
+                                style={{ borderColor: "#DCD4C0" }}
+                              />
+                              <button onClick={() => updateHoldingValue(h.id)} className="px-2 py-1 rounded-sm text-xs" style={{ background: "#2F4550", color: "#F4F0E6" }}>
+                                Update
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })
             )}
           </>
         )}
