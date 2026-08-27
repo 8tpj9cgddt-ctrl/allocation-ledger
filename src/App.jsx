@@ -15,7 +15,6 @@ function formatMoney(n) {
   return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-
 /* ---------- Login screen ---------- */
 function Login() {
   const [email, setEmail] = useState("");
@@ -280,23 +279,34 @@ function Ledger({ userId }) {
         {grandTotal > 0 && (
           <div className="mb-8 p-4 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
             <h2 className="text-xs uppercase tracking-widest mb-3" style={{ color: "#6B6355" }}>Split breakdown</h2>
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart margin={{ top: 20, bottom: 20, left: 20, right: 20 }}>
                 <Pie
                   data={categories.map((c) => ({ name: c.label, value: totals[c.id] || 0, color: c.color }))}
                   dataKey="value"
                   nameKey="name"
                   cx="50%"
                   cy="50%"
-                  outerRadius={80}
-                  label={(entry) => `${entry.name} ${Math.round((entry.value / grandTotal) * 100)}%`}
+                  outerRadius={90}
+                  labelLine={false}
+                  label={({ cx, cy, midAngle, innerRadius, outerRadius, value }) => {
+                    const RAD = Math.PI / 180;
+                    const radius = innerRadius + (outerRadius - innerRadius) * 0.6;
+                    const x = cx + radius * Math.cos(-midAngle * RAD);
+                    const y = cy + radius * Math.sin(-midAngle * RAD);
+                    return (
+                      <text x={x} y={y} fill="#FFFDF9" textAnchor="middle" dominantBaseline="central" fontSize={13} fontFamily="'Courier New', monospace">
+                        ${formatMoney(value)}
+                      </text>
+                    );
+                  }}
                 >
                   {categories.map((c) => (
                     <Cell key={c.id} fill={c.color} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(value) => `$${formatMoney(value)}`} />
-                <Legend />
+                <Legend layout="vertical" verticalAlign="middle" align="left" />
               </PieChart>
             </ResponsiveContainer>
           </div>
