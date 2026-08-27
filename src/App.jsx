@@ -138,7 +138,7 @@ function Ledger({ userId }) {
   const [goalDraft, setGoalDraft] = useState("");
   const [goalSaved, setGoalSaved] = useState(false);
   const [newTodoText, setNewTodoText] = useState("");
-  const [newHolding, setNewHolding] = useState({ type: "Stocks", customType: "", name: "", invested: "", currentValue: "" });
+  const [newHolding, setNewHolding] = useState({ type: "Stocks", customType: "", ticker: "", name: "", invested: "", currentValue: "" });
   const [holdingEdits, setHoldingEdits] = useState({});
   const inputRef = useRef(null);
 
@@ -343,11 +343,11 @@ function Ledger({ userId }) {
     const currentValue = parseFloat(newHolding.currentValue) || 0;
     const { data, error: insertError } = await supabase
       .from("net_worth_holdings")
-      .insert({ user_id: userId, asset_type: finalType, name: newHolding.name.trim(), invested, current_value: currentValue })
+      .insert({ user_id: userId, asset_type: finalType, ticker: newHolding.ticker.trim() || null, name: newHolding.name.trim(), invested, current_value: currentValue })
       .select();
     if (!insertError && data) {
       setHoldings([...holdings, data[0]]);
-      setNewHolding({ type: "Stocks", customType: "", name: "", invested: "", currentValue: "" });
+      setNewHolding({ type: "Stocks", customType: "", ticker: "", name: "", invested: "", currentValue: "" });
     }
   }
 
@@ -672,6 +672,48 @@ function Ledger({ userId }) {
               </div>
             </div>
 
+            {netWorthTotal > 0 && (
+              <div className="mb-6 p-4 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
+                <h2 className="text-xs uppercase tracking-widest mb-3" style={{ color: "#6B6355" }}>What we own</h2>
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart margin={{ top: 20, bottom: 20, left: 20, right: 20 }}>
+                    <Pie
+                      data={holdings.map((h, i) => ({
+                        name: h.ticker || h.name,
+                        value: Number(h.current_value || 0),
+                        color: PALETTE[i % PALETTE.length],
+                      }))}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={90}
+                      labelLine={false}
+                      label={({ cx, cy, midAngle, innerRadius, outerRadius, name, value }) => {
+                        const RAD = Math.PI / 180;
+                        const radius = innerRadius + (outerRadius - innerRadius) * 0.6;
+                        const x = cx + radius * Math.cos(-midAngle * RAD);
+                        const y = cy + radius * Math.sin(-midAngle * RAD);
+                        const pct = Math.round((value / netWorthTotal) * 100);
+                        if (pct < 5) return null;
+                        return (
+                          <text x={x} y={y} fill="#FFFDF9" textAnchor="middle" dominantBaseline="central" fontSize={12} fontFamily="'Courier New', monospace">
+                            {pct}%
+                          </text>
+                        );
+                      }}
+                    >
+                      {holdings.map((h, i) => (
+                        <Cell key={h.id} fill={PALETTE[i % PALETTE.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value, name) => [`$${formatMoney(value)} (${Math.round((value / netWorthTotal) * 100)}%)`, name]} />
+                    <Legend layout="vertical" verticalAlign="middle" align="left" wrapperStyle={{ fontSize: "12px" }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
             <form onSubmit={addHolding} className="mb-8 p-4 rounded-sm space-y-2" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
               <div className="flex gap-2 flex-wrap">
                 <select
@@ -695,14 +737,24 @@ function Ledger({ userId }) {
                   />
                 )}
               </div>
-              <input
-                type="text"
-                value={newHolding.name}
-                onChange={(e) => setNewHolding({ ...newHolding, name: e.target.value })}
-                placeholder="Name (e.g. Apple, S&P 500 ETF, Maybank FD)"
-                className="w-full text-sm bg-transparent border-b-2 py-2"
-                style={{ borderColor: "#2A2620" }}
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newHolding.ticker}
+                  onChange={(e) => setNewHolding({ ...newHolding, ticker: e.target.value.toUpperCase() })}
+                  placeholder="Ticker (optional, e.g. AAPL)"
+                  className="w-32 text-sm bg-transparent border-b-2 py-2"
+                  style={{ borderColor: "#2A2620" }}
+                />
+                <input
+                  type="text"
+                  value={newHolding.name}
+                  onChange={(e) => setNewHolding({ ...newHolding, name: e.target.value })}
+                  placeholder="Name (e.g. Apple, S&P 500 ETF, Maybank FD)"
+                  className="flex-1 text-sm bg-transparent border-b-2 py-2"
+                  style={{ borderColor: "#2A2620" }}
+                />
+              </div>
               <div className="flex gap-2 flex-wrap items-end">
                 <div className="flex-1 min-w-[100px]">
                   <label className="block text-xs uppercase tracking-widest mb-1" style={{ color: "#6B6355" }}>Invested</label>
@@ -745,7 +797,7 @@ function Ledger({ userId }) {
                         return (
                           <div key={h.id} className="p-3 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
                             <div className="flex justify-between items-start mb-1">
-                              <span className="text-sm font-medium">{h.name}</span>
+                              <span className="text-sm font-medium">{h.ticker ? `${h.ticker} — ${h.name}` : h.name}</span>
                               <button onClick={() => deleteHolding(h.id)} className="text-xs px-1" style={{ color: "#A23E3E" }}>✕</button>
                             </div>
                             <div className="flex justify-between text-xs mb-2">
