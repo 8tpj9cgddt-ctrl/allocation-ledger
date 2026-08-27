@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "./supabaseClient";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 const DEFAULT_CATEGORIES = [
   { label: "Needs", note: "food, transport, essentials", pct: 50, color: "#8A6D3B", sort_order: 0 },
@@ -13,6 +14,7 @@ function formatMoney(n) {
   const v = Number(n) || 0;
   return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+
 
 /* ---------- Login screen ---------- */
 function Login() {
@@ -272,6 +274,31 @@ function Ledger({ userId }) {
           <div className="flash-in mb-8 p-4 rounded-sm text-sm" style={{ background: "#EFE9D8", border: "1px dashed #2A2620" }}>
             <span className="num">${formatMoney(flash.amount)}</span> from {flash.source} →{" "}
             {categories.map((c) => `${c.label} $${formatMoney(flash.split[c.id])}`).join("  ·  ")}
+          </div>
+        )}
+
+        {grandTotal > 0 && (
+          <div className="mb-8 p-4 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
+            <h2 className="text-xs uppercase tracking-widest mb-3" style={{ color: "#6B6355" }}>Split breakdown</h2>
+            <ResponsiveContainer width="100%" height={240}>
+              <PieChart>
+                <Pie
+                  data={categories.map((c) => ({ name: c.label, value: totals[c.id] || 0, color: c.color }))}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={80}
+                  label={(entry) => `${entry.name} ${Math.round((entry.value / grandTotal) * 100)}%`}
+                >
+                  {categories.map((c) => (
+                    <Cell key={c.id} fill={c.color} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => `$${formatMoney(value)}`} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
           </div>
         )}
 
