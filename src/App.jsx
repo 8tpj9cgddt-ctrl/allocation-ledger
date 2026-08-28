@@ -42,6 +42,16 @@ function IconTrend(props) {
     </svg>
   );
 }
+function IconRepeat(props) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="m17 2 4 4-4 4" />
+      <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+      <path d="m7 22-4-4 4-4" />
+      <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+    </svg>
+  );
+}
 
 /* ---------- Login screen ---------- */
 function Login() {
@@ -96,6 +106,7 @@ function BottomNav({ page, setPage }) {
     { id: "home", label: "Home", Icon: IconHome },
     { id: "todos", label: "To-do", Icon: IconCheck },
     { id: "networth", label: "Net worth", Icon: IconTrend },
+    { id: "subscriptions", label: "Subs", Icon: IconRepeat },
   ];
   return (
     <div
@@ -126,6 +137,10 @@ function Ledger({ userId }) {
   const [entries, setEntries] = useState([]);
   const [todos, setTodos] = useState([]);
   const [holdings, setHoldings] = useState([]);
+  const [subscriptions, setSubscriptions] = useState([]);
+  const [newSub, setNewSub] = useState({ name: "", cost: "", cycle: "monthly", renewal_date: "", notes: "" });
+  const [editingSubId, setEditingSubId] = useState(null);
+  const [editSub, setEditSub] = useState({});
   const [loading, setLoading] = useState(true);
   const [amount, setAmount] = useState("");
   const [source, setSource] = useState("");
@@ -142,6 +157,7 @@ function Ledger({ userId }) {
   const [page, setPage] = useState("home");
   const [goalTarget, setGoalTarget] = useState(null);
   const [goalDraft, setGoalDraft] = useState("");
+  const [goalCategoryIds, setGoalCategoryIds] = useState([]);
   const [goalSaved, setGoalSaved] = useState(false);
   const [newTodoText, setNewTodoText] = useState("");
   const [newHolding, setNewHolding] = useState({ type: "Stocks", customType: "", ticker: "", name: "", invested: "", currentValue: "" });
@@ -182,6 +198,11 @@ function Ledger({ userId }) {
       .select("*")
       .order("created_at", { ascending: true });
 
+    const { data: subs } = await supabase
+      .from("subscriptions")
+      .select("*")
+      .order("created_at", { ascending: true });
+
     const { data: goalRow } = await supabase
       .from("user_goal")
       .select("*")
@@ -191,8 +212,10 @@ function Ledger({ userId }) {
     setEntries(ents || []);
     setTodos(td || []);
     setHoldings(hd || []);
+    setSubscriptions(subs || []);
     setGoalTarget(goalRow ? goalRow.target : null);
     setGoalDraft(goalRow && goalRow.target != null ? String(goalRow.target) : "");
+    setGoalCategoryIds(goalRow && goalRow.category_ids ? goalRow.category_ids : []);
     setLoading(false);
   }
 
@@ -208,6 +231,7 @@ function Ledger({ userId }) {
   }, [categories, entries]);
 
   const grandTotal = Object.values(totals).reduce((a, b) => a + b, 0);
+  const goalProgress = goalCategoryIds.reduce((a, id) => a + (totals[id] || 0), 0);
 
   function pctSum(cats) {
     return cats.reduce((a, c) => a + (Number(c.pct) || 0), 0);
@@ -357,12 +381,18 @@ function Ledger({ userId }) {
     const target = isNaN(val) ? null : val;
     const { error: upsertError } = await supabase
       .from("user_goal")
-      .upsert({ user_id: userId, target }, { onConflict: "user_id" });
+      .upsert({ user_id: userId, target, category_ids: goalCategoryIds }, { onConflict: "user_id" });
     if (!upsertError) {
       setGoalTarget(target);
       setGoalSaved(true);
       setTimeout(() => setGoalSaved(false), 1500);
     }
+  }
+
+  function toggleGoalCategory(catId) {
+    setGoalCategoryIds(
+      goalCategoryIds.includes(catId) ? goalCategoryIds.filter((id) => id !== catId) : [...goalCategoryIds, catId]
+    );
   }
 
   async function addTodo(e) {
@@ -417,7 +447,95 @@ function Ledger({ userId }) {
     setHoldings(holdings.filter((h) => h.id !== id));
   }
 
+  function nextRenewalDate(dateStr, cycle) {
+    if (!dateStr) return null;
+    const original = new Date(dateStr + "T00:00:00");
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let next;
+    if (cycle === "yearly") {
+      next = new Date(today.getFullYear(), original.getMonth(), original.getDate());
+      if (next < today) next = new Date(today.getFullYear() + 1, original.getMonth(), original.getDate());
+    } else {
+      next = new Date(today.getFullYear(), today.getMonth(), original.getDate());
+      if (next < today) next = new Date(today.getFullYear(), today.getMonth() + 1, original.getDate());
+    }
+    return next;
+  }
+
+  function daysUntil(date) {
+    if (!date) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.round((date - today) / (1000 * 60 * 60 * 24));
+  }
+
+  async function addSubscription(e) {
+    e.preventDefault();
+    if (!newSub.name.trim() || !newSub.cost || !newSub.renewal_date) return;
+    const { data, error: insertError } = await supabase
+      .from("subscriptions")
+      .insert({
+        user_id: userId,
+        name: newSub.name.trim(),
+        cost: parseFloat(newSub.cost) || 0,
+        cycle: newSub.cycle,
+        renewal_date: newSub.renewal_date,
+        notes: newSub.notes.trim() || null,
+        active: true,
+      })
+      .select();
+    if (!insertError && data) {
+      setSubscriptions([...subscriptions, data[0]]);
+      setNewSub({ name: "", cost: "", cycle: "monthly", renewal_date: "", notes: "" });
+    }
+  }
+
+  function startEditSub(s) {
+    setEditingSubId(s.id);
+    setEditSub({ name: s.name, cost: String(s.cost), cycle: s.cycle, renewal_date: s.renewal_date, notes: s.notes || "" });
+  }
+
+  async function saveEditSub(id) {
+    const updates = {
+      name: editSub.name.trim(),
+      cost: parseFloat(editSub.cost) || 0,
+      cycle: editSub.cycle,
+      renewal_date: editSub.renewal_date,
+      notes: editSub.notes.trim() || null,
+    };
+    const { error: updateError } = await supabase.from("subscriptions").update(updates).eq("id", id);
+    if (!updateError) {
+      setSubscriptions(subscriptions.map((s) => (s.id === id ? { ...s, ...updates } : s)));
+      setEditingSubId(null);
+    }
+  }
+
+  async function toggleSubActive(id, active) {
+    await supabase.from("subscriptions").update({ active: !active }).eq("id", id);
+    setSubscriptions(subscriptions.map((s) => (s.id === id ? { ...s, active: !active } : s)));
+  }
+
+  async function deleteSubscription(id) {
+    if (!confirm("Delete this subscription completely?")) return;
+    await supabase.from("subscriptions").delete().eq("id", id);
+    setSubscriptions(subscriptions.filter((s) => s.id !== id));
+  }
+
   const draftSum = pctSum(draftCats);
+
+  const activeSubsSorted = useMemo(() => {
+    return subscriptions
+      .filter((s) => s.active)
+      .map((s) => ({ ...s, _next: nextRenewalDate(s.renewal_date, s.cycle) }))
+      .sort((a, b) => a._next - b._next);
+  }, [subscriptions]);
+
+  const inactiveSubs = subscriptions.filter((s) => !s.active);
+
+  const totalMonthlySubs = subscriptions
+    .filter((s) => s.active)
+    .reduce((a, s) => a + (s.cycle === "yearly" ? Number(s.cost) / 12 : Number(s.cost)), 0);
 
   const holdingsByType = useMemo(() => {
     const groups = {};
@@ -495,16 +613,28 @@ function Ledger({ userId }) {
                 {goalTarget ? (
                   <>
                     <div className="flex justify-between text-sm mb-1">
-                      <span className="num">${formatMoney(grandTotal)} / ${formatMoney(goalTarget)}</span>
-                      <span style={{ color: "#6B6355" }}>{Math.min(Math.round((grandTotal / goalTarget) * 100), 100)}%</span>
+                      <span className="num">${formatMoney(goalProgress)} / ${formatMoney(goalTarget)}</span>
+                      <span style={{ color: "#6B6355" }}>{Math.min(Math.round((goalProgress / goalTarget) * 100), 100)}%</span>
                     </div>
                     <div className="h-2 rounded-full w-full mb-3" style={{ background: "#E4DCC8" }}>
-                      <div className="bar-fill h-2 rounded-full" style={{ width: `${Math.min((grandTotal / goalTarget) * 100, 100)}%`, background: "#2F4550" }} />
+                      <div className="bar-fill h-2 rounded-full" style={{ width: `${Math.min((goalProgress / goalTarget) * 100, 100)}%`, background: "#2F4550" }} />
                     </div>
                   </>
                 ) : (
                   <p className="text-sm mb-3" style={{ color: "#8A8272" }}>No goal set yet.</p>
                 )}
+                <div className="flex flex-wrap gap-3 mb-3">
+                  {categories.map((c) => (
+                    <label key={c.id} className="flex items-center gap-1 text-xs" style={{ color: "#6B6355" }}>
+                      <input
+                        type="checkbox"
+                        checked={goalCategoryIds.includes(c.id)}
+                        onChange={() => toggleGoalCategory(c.id)}
+                      />
+                      <span style={{ color: c.color }}>{c.label}</span>
+                    </label>
+                  ))}
+                </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm">$</span>
                   <input
@@ -960,6 +1090,158 @@ function Ledger({ userId }) {
                   </div>
                 );
               })
+            )}
+          </>
+        )}
+
+        {page === "subscriptions" && (
+          <>
+            <div className="mb-6">
+              <h1 className="text-2xl tracking-tight">Subscriptions</h1>
+              <p className="text-sm mt-1" style={{ color: "#6B6355" }}>Bills, streaming, anything recurring.</p>
+            </div>
+
+            <div className="mb-6 p-4 rounded-sm" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
+              <div className="flex justify-between text-sm">
+                <span style={{ color: "#6B6355" }}>Total per month</span>
+                <span className="num text-lg" style={{ color: "#2F4550" }}>${formatMoney(totalMonthlySubs)}</span>
+              </div>
+              <div className="flex justify-between text-xs mt-1">
+                <span style={{ color: "#8A8272" }}>Per year</span>
+                <span className="num" style={{ color: "#8A8272" }}>${formatMoney(totalMonthlySubs * 12)}</span>
+              </div>
+            </div>
+
+            <form onSubmit={addSubscription} className="mb-8 p-4 rounded-sm space-y-2" style={{ background: "#FFFDF9", border: "1px solid #DCD4C0" }}>
+              <input
+                type="text"
+                value={newSub.name}
+                onChange={(e) => setNewSub({ ...newSub, name: e.target.value })}
+                placeholder="Name (e.g. Spotify, Electricity bill)"
+                className="w-full text-sm bg-transparent border-b-2 py-2"
+                style={{ borderColor: "#2A2620" }}
+              />
+              <div className="flex gap-2 flex-wrap items-end">
+                <div className="flex-1 min-w-[90px]">
+                  <label className="block text-xs uppercase tracking-widest mb-1" style={{ color: "#6B6355" }}>Cost</label>
+                  <div className="flex items-center">
+                    <span className="mr-1">$</span>
+                    <input type="number" min="0" step="0.01" value={newSub.cost} onChange={(e) => setNewSub({ ...newSub, cost: e.target.value })}
+                      className="w-full num bg-transparent border-b-2 py-1 text-sm" style={{ borderColor: "#2A2620" }} />
+                  </div>
+                </div>
+                <div className="flex-1 min-w-[100px]">
+                  <label className="block text-xs uppercase tracking-widest mb-1" style={{ color: "#6B6355" }}>Cycle</label>
+                  <select
+                    value={newSub.cycle}
+                    onChange={(e) => setNewSub({ ...newSub, cycle: e.target.value })}
+                    className="w-full text-sm bg-transparent border-b-2 py-1"
+                    style={{ borderColor: "#2A2620" }}
+                  >
+                    <option value="monthly">Monthly</option>
+                    <option value="yearly">Yearly</option>
+                  </select>
+                </div>
+                <div className="flex-1 min-w-[130px]">
+                  <label className="block text-xs uppercase tracking-widest mb-1" style={{ color: "#6B6355" }}>Next renewal</label>
+                  <input
+                    type="date"
+                    value={newSub.renewal_date}
+                    onChange={(e) => setNewSub({ ...newSub, renewal_date: e.target.value })}
+                    className="w-full text-sm bg-transparent border-b-2 py-1"
+                    style={{ borderColor: "#2A2620" }}
+                  />
+                </div>
+              </div>
+              <input
+                type="text"
+                value={newSub.notes}
+                onChange={(e) => setNewSub({ ...newSub, notes: e.target.value })}
+                placeholder="Notes (optional)"
+                className="w-full text-xs bg-transparent border-b py-1"
+                style={{ borderColor: "#DCD4C0", color: "#6B6355" }}
+              />
+              <button type="submit" className="px-4 py-2 rounded-sm text-sm" style={{ background: "#2F4550", color: "#F4F0E6" }}>
+                Add
+              </button>
+            </form>
+
+            {activeSubsSorted.length === 0 && inactiveSubs.length === 0 ? (
+              <div className="text-sm py-8 text-center rounded-sm" style={{ color: "#8A8272", border: "1px dashed #DCD4C0" }}>
+                No subscriptions yet — add your first one above.
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2 mb-6">
+                  {activeSubsSorted.map((s) => {
+                    const days = daysUntil(s._next);
+                    const soon = days <= 7;
+                    return editingSubId === s.id ? (
+                      <div key={s.id} className="p-3 rounded-sm space-y-2" style={{ background: "#EFE9D8", border: "1px solid #DCD4C0" }}>
+                        <input type="text" value={editSub.name} onChange={(e) => setEditSub({ ...editSub, name: e.target.value })}
+                          className="w-full text-sm bg-transparent border-b-2 py-1" style={{ borderColor: "#2A2620" }} />
+                        <div className="flex gap-2 flex-wrap">
+                          <input type="number" step="0.01" value={editSub.cost} onChange={(e) => setEditSub({ ...editSub, cost: e.target.value })}
+                            className="flex-1 min-w-[80px] num bg-transparent border-b-2 py-1 text-sm" style={{ borderColor: "#2A2620" }} />
+                          <select value={editSub.cycle} onChange={(e) => setEditSub({ ...editSub, cycle: e.target.value })}
+                            className="flex-1 min-w-[100px] text-sm bg-transparent border-b-2 py-1" style={{ borderColor: "#2A2620" }}>
+                            <option value="monthly">Monthly</option>
+                            <option value="yearly">Yearly</option>
+                          </select>
+                          <input type="date" value={editSub.renewal_date} onChange={(e) => setEditSub({ ...editSub, renewal_date: e.target.value })}
+                            className="flex-1 min-w-[130px] text-sm bg-transparent border-b-2 py-1" style={{ borderColor: "#2A2620" }} />
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => saveEditSub(s.id)} className="px-3 py-1 rounded-sm text-xs" style={{ background: "#2F4550", color: "#F4F0E6" }}>Save</button>
+                          <button onClick={() => setEditingSubId(null)} className="px-3 py-1 rounded-sm text-xs" style={{ border: "1px solid #2F4550", color: "#2F4550" }}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div key={s.id} className="p-3 rounded-sm" style={{ background: "#FFFDF9", border: `1px solid ${soon ? "#A23E3E" : "#DCD4C0"}` }}>
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="text-sm font-medium">{s.name}</div>
+                            <div className="text-xs" style={{ color: "#8A8272" }}>
+                              {s.cycle === "monthly" ? "Monthly" : "Yearly"} · {s.notes}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="num text-sm">${formatMoney(s.cost)}</div>
+                            <div className="text-xs" style={{ color: soon ? "#A23E3E" : "#8A8272" }}>
+                              {days === 0 ? "renews today" : days === 1 ? "renews tomorrow" : `renews in ${days}d`}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex gap-3 mt-2">
+                          <button onClick={() => startEditSub(s)} className="text-xs underline" style={{ color: "#2F4550" }}>Edit</button>
+                          <button onClick={() => toggleSubActive(s.id, s.active)} className="text-xs underline" style={{ color: "#6B6355" }}>Mark inactive</button>
+                          <button onClick={() => deleteSubscription(s.id)} className="text-xs" style={{ color: "#A23E3E" }}>✕</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {inactiveSubs.length > 0 && (
+                  <div>
+                    <h3 className="text-xs uppercase tracking-widest mb-2" style={{ color: "#8A8272" }}>Inactive</h3>
+                    <div className="space-y-2">
+                      {inactiveSubs.map((s) => (
+                        <div key={s.id} className="p-3 rounded-sm flex justify-between items-center" style={{ background: "#F4F0E6", border: "1px solid #DCD4C0", opacity: 0.7 }}>
+                          <div>
+                            <div className="text-sm" style={{ textDecoration: "line-through", color: "#8A8272" }}>{s.name}</div>
+                            <div className="text-xs" style={{ color: "#8A8272" }}>${formatMoney(s.cost)} · {s.cycle}</div>
+                          </div>
+                          <div className="flex gap-3">
+                            <button onClick={() => toggleSubActive(s.id, s.active)} className="text-xs underline" style={{ color: "#2F4550" }}>Reactivate</button>
+                            <button onClick={() => deleteSubscription(s.id)} className="text-xs" style={{ color: "#A23E3E" }}>✕</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
