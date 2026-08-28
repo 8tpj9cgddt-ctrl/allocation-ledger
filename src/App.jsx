@@ -133,6 +133,12 @@ function Ledger({ userId }) {
   const [draftCats, setDraftCats] = useState([]);
   const [flash, setFlash] = useState(null);
   const [error, setError] = useState("");
+  const [editingEntryId, setEditingEntryId] = useState(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editSource, setEditSource] = useState("");
+  const [searchText, setSearchText] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState("home");
   const [goalTarget, setGoalTarget] = useState(null);
   const [goalDraft, setGoalDraft] = useState("");
@@ -164,7 +170,7 @@ function Ledger({ userId }) {
       .from("entries")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(1000);
 
     const { data: td } = await supabase
       .from("todos")
@@ -298,6 +304,53 @@ function Ledger({ userId }) {
     await supabase.from("entries").delete().eq("user_id", userId);
     setEntries([]);
   }
+
+  function startEditEntry(entry) {
+    setEditingEntryId(entry.id);
+    setEditAmount(String(entry.amount));
+    setEditSource(entry.source);
+  }
+
+  function cancelEditEntry() {
+    setEditingEntryId(null);
+    setEditAmount("");
+    setEditSource("");
+  }
+
+  async function saveEditEntry(id) {
+    const amt = parseFloat(editAmount);
+    if (!amt || amt <= 0) {
+      setError("Enter an amount above zero.");
+      return;
+    }
+    const split = {};
+    categories.forEach((c) => {
+      split[c.id] = Math.round(((amt * c.pct) / 100) * 100) / 100;
+    });
+    const { error: updateError } = await supabase
+      .from("entries")
+      .update({ amount: amt, source: editSource.trim() || "Unlabeled", split })
+      .eq("id", id);
+    if (!updateError) {
+      setEntries(entries.map((e) => (e.id === id ? { ...e, amount: amt, source: editSource.trim() || "Unlabeled", split } : e)));
+      cancelEditEntry();
+    }
+  }
+
+  async function deleteEntry(id) {
+    if (!confirm("Delete this entry?")) return;
+    await supabase.from("entries").delete().eq("id", id);
+    setEntries(entries.filter((e) => e.id !== id));
+  }
+
+  const filteredEntries = useMemo(() => {
+    return entries.filter((e) => {
+      if (searchText && !e.source.toLowerCase().includes(searchText.toLowerCase())) return false;
+      if (dateFrom && new Date(e.created_at) < new Date(dateFrom)) return false;
+      if (dateTo && new Date(e.created_at) > new Date(dateTo + "T23:59:59")) return false;
+      return true;
+    });
+  }, [entries, searchText, dateFrom, dateTo]);
 
   async function saveGoal() {
     const val = parseFloat(goalDraft);
@@ -578,23 +631,102 @@ function Ledger({ userId }) {
                   <button onClick={handleReset} className="text-xs underline" style={{ color: "#A23E3E" }}>Reset all</button>
                 )}
               </div>
+
+              {entries.length > 0 && (
+                <div className="flex gap-2 flex-wrap mb-4">
+                  <input
+                    type="text"
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                    placeholder="Search source..."
+                    className="flex-1 min-w-[120px] text-sm bg-transparent border-b py-1"
+                    style={{ borderColor: "#DCD4C0" }}
+                  />
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="text-xs bg-transparent border-b py-1"
+                    style={{ borderColor: "#DCD4C0", color: "#6B6355" }}
+                  />
+                  <span className="text-xs self-center" style={{ color: "#8A8272" }}>to</span>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="text-xs bg-transparent border-b py-1"
+                    style={{ borderColor: "#DCD4C0", color: "#6B6355" }}
+                  />
+                  {(searchText || dateFrom || dateTo) && (
+                    <button
+                      onClick={() => { setSearchText(""); setDateFrom(""); setDateTo(""); }}
+                      className="text-xs underline"
+                      style={{ color: "#2F4550" }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              )}
+
               {entries.length === 0 ? (
                 <div className="text-sm py-8 text-center rounded-sm" style={{ color: "#8A8272", border: "1px dashed #DCD4C0" }}>
                   Nothing logged yet — split your first deposit above.
                 </div>
+              ) : filteredEntries.length === 0 ? (
+                <div className="text-sm py-8 text-center rounded-sm" style={{ color: "#8A8272", border: "1px dashed #DCD4C0" }}>
+                  No entries match that search.
+                </div>
               ) : (
                 <div className="divide-y" style={{ borderColor: "#DCD4C0" }}>
-                  {entries.map((h) => (
-                    <div key={h.id} className="py-3 flex justify-between items-center text-sm">
-                      <div>
-                        <div>{h.source}</div>
-                        <div className="text-xs" style={{ color: "#8A8272" }}>
-                          {new Date(h.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  {filteredEntries.map((h) =>
+                    editingEntryId === h.id ? (
+                      <div key={h.id} className="py-3" style={{ background: "#EFE9D8" }}>
+                        <div className="flex gap-2 flex-wrap items-end px-2">
+                          <div className="flex-1 min-w-[100px]">
+                            <label className="block text-xs uppercase tracking-widest mb-1" style={{ color: "#6B6355" }}>Amount</label>
+                            <div className="flex items-center">
+                              <span className="mr-1">$</span>
+                              <input
+                                type="number" step="0.01" min="0" value={editAmount}
+                                onChange={(e) => setEditAmount(e.target.value)}
+                                className="w-full num bg-transparent border-b-2 py-1 text-sm" style={{ borderColor: "#2A2620" }}
+                              />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-[100px]">
+                            <label className="block text-xs uppercase tracking-widest mb-1" style={{ color: "#6B6355" }}>Source</label>
+                            <input
+                              type="text" value={editSource}
+                              onChange={(e) => setEditSource(e.target.value)}
+                              className="w-full text-sm bg-transparent border-b-2 py-1" style={{ borderColor: "#2A2620" }}
+                            />
+                          </div>
+                          <button onClick={() => saveEditEntry(h.id)} className="px-3 py-1.5 rounded-sm text-xs" style={{ background: "#2F4550", color: "#F4F0E6" }}>
+                            Save
+                          </button>
+                          <button onClick={cancelEditEntry} className="px-3 py-1.5 rounded-sm text-xs" style={{ border: "1px solid #2F4550", color: "#2F4550" }}>
+                            Cancel
+                          </button>
+                        </div>
+                        {error && <div className="text-xs mt-2 px-2" style={{ color: "#A23E3E" }}>{error}</div>}
+                      </div>
+                    ) : (
+                      <div key={h.id} className="py-3 flex justify-between items-center text-sm group">
+                        <div>
+                          <div>{h.source}</div>
+                          <div className="text-xs" style={{ color: "#8A8272" }}>
+                            {new Date(h.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="num">${formatMoney(h.amount)}</div>
+                          <button onClick={() => startEditEntry(h)} className="text-xs underline" style={{ color: "#2F4550" }}>Edit</button>
+                          <button onClick={() => deleteEntry(h.id)} className="text-xs" style={{ color: "#A23E3E" }}>✕</button>
                         </div>
                       </div>
-                      <div className="num">${formatMoney(h.amount)}</div>
-                    </div>
-                  ))}
+                    )
+                  )}
                 </div>
               )}
             </div>
