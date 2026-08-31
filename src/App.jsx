@@ -128,7 +128,7 @@ function SetNewPassword({ onDone, theme }) {
   }
 
   return (
-    <div style={{ background: theme.bg, minHeight: "100vh", fontFamily: "Georgia, serif" }} className="flex items-center justify-center px-5">
+    <div style={{ background: theme.bg, minHeight: "100vh", fontFamily: "Georgia, serif", color: theme.text }} className="flex items-center justify-center px-5">
       <style>{`input, select, textarea { color: inherit; } input::placeholder { color: inherit; opacity: 0.5; }`}</style>
       <form onSubmit={handleSubmit} className="w-full max-w-sm p-6 rounded-sm" style={{ background: theme.card, border: `1px solid ${theme.border}` }}>
         <h1 className="text-2xl mb-2" style={{ color: theme.text }}>Set a new password</h1>
@@ -209,7 +209,7 @@ function Login() {
   }
 
   return (
-    <div style={{ background: theme.bg, minHeight: "100vh", fontFamily: "Georgia, serif" }} className="flex items-center justify-center px-5">
+    <div style={{ background: theme.bg, minHeight: "100vh", fontFamily: "Georgia, serif", color: theme.text }} className="flex items-center justify-center px-5">
       <style>{`input, select, textarea { color: inherit; } input::placeholder { color: inherit; opacity: 0.5; }`}</style>
       <button
         onClick={() => setDarkMode(!darkMode)}
