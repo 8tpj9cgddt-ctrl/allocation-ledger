@@ -100,6 +100,23 @@ function IconMoon(props) {
     </svg>
   );
 }
+function IconEye(props) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+function IconEyeOff(props) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M9.9 4.24A9.9 9.9 0 0 1 12 4c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.5 3.5M6.6 6.6C3.6 8.5 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 4.4-1" />
+      <path d="M14.1 14.1a3 3 0 1 1-4.2-4.2" />
+      <path d="M2 2l20 20" />
+    </svg>
+  );
+}
 
 /* ---------- Login screen ---------- */
 /* ---------- Set new password (after clicking a reset link) ---------- */
@@ -108,6 +125,8 @@ function SetNewPassword({ onDone, theme }) {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -133,25 +152,35 @@ function SetNewPassword({ onDone, theme }) {
       <form onSubmit={handleSubmit} className="w-full max-w-sm p-6 rounded-sm" style={{ background: theme.card, border: `1px solid ${theme.border}` }}>
         <h1 className="text-2xl mb-2" style={{ color: theme.text }}>Set a new password</h1>
         <p className="text-sm mb-4" style={{ color: theme.textMuted }}>Choose a new password for your account.</p>
-        <input
-          type="password"
-          required
-          minLength={6}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="New password (min 6 characters)"
-          className="w-full text-base bg-transparent border-b-2 py-2 mb-4"
-          style={{ borderColor: theme.text }}
-        />
-        <input
-          type="password"
-          required
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          placeholder="Confirm new password"
-          className="w-full text-base bg-transparent border-b-2 py-2 mb-4"
-          style={{ borderColor: theme.text }}
-        />
+        <div className="relative mb-4">
+          <input
+            type={showPassword ? "text" : "password"}
+            required
+            minLength={6}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="New password (min 6 characters)"
+            className="w-full text-base bg-transparent border-b-2 py-2 pr-8"
+            style={{ borderColor: theme.text }}
+          />
+          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-0 top-1/2 -translate-y-1/2" style={{ color: theme.textMuted }} aria-label="Toggle password visibility">
+            {showPassword ? <IconEyeOff /> : <IconEye />}
+          </button>
+        </div>
+        <div className="relative mb-4">
+          <input
+            type={showConfirm ? "text" : "password"}
+            required
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            placeholder="Confirm new password"
+            className="w-full text-base bg-transparent border-b-2 py-2 pr-8"
+            style={{ borderColor: theme.text }}
+          />
+          <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-0 top-1/2 -translate-y-1/2" style={{ color: theme.textMuted }} aria-label="Toggle password visibility">
+            {showConfirm ? <IconEyeOff /> : <IconEye />}
+          </button>
+        </div>
         <button type="submit" disabled={submitting} className="w-full px-4 py-2 rounded-sm text-sm" style={{ background: theme.accent, color: theme.accentText }}>
           {submitting ? "Saving..." : "Save new password"}
         </button>
@@ -168,6 +197,7 @@ function Login() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [darkMode, setDarkMode] = useState(() => typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   const theme = darkMode ? THEMES.dark : THEMES.light;
 
@@ -233,16 +263,21 @@ function Login() {
           className="w-full text-base bg-transparent border-b-2 py-2 mb-4"
           style={{ borderColor: theme.text }}
         />
-        <input
-          type="password"
-          required
-          minLength={6}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password (min 6 characters)"
-          className="w-full text-base bg-transparent border-b-2 py-2 mb-4"
-          style={{ borderColor: theme.text }}
-        />
+        <div className="relative mb-4">
+          <input
+            type={showPassword ? "text" : "password"}
+            required
+            minLength={6}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password (min 6 characters)"
+            className="w-full text-base bg-transparent border-b-2 py-2 pr-8"
+            style={{ borderColor: theme.text }}
+          />
+          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-0 top-1/2 -translate-y-1/2" style={{ color: theme.textMuted }} aria-label="Toggle password visibility">
+            {showPassword ? <IconEyeOff /> : <IconEye />}
+          </button>
+        </div>
         <button type="submit" disabled={submitting} className="w-full px-4 py-2 rounded-sm text-sm" style={{ background: theme.accent, color: theme.accentText }}>
           {submitting ? "Please wait..." : mode === "signin" ? "Sign in" : "Create account"}
         </button>
