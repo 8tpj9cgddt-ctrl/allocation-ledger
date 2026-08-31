@@ -104,47 +104,76 @@ function IconMoon(props) {
 /* ---------- Login screen ---------- */
 function Login() {
   const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
+  const [password, setPassword] = useState("");
+  const [mode, setMode] = useState("signin"); // "signin" | "signup"
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [darkMode] = useState(() => typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   const theme = darkMode ? THEMES.dark : THEMES.light;
 
-  async function handleLogin(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError("");
-    const { error } = await supabase.auth.signInWithOtp({ email });
-    if (error) setError(error.message);
-    else setSent(true);
+    setInfo("");
+    setSubmitting(true);
+    if (mode === "signin") {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) setError(error.message);
+      // On success, the auth state listener in App() picks up the new session automatically.
+    } else {
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) {
+        setError(error.message);
+      } else if (data.session) {
+        // Email confirmation is off in Supabase settings — signed in immediately.
+      } else {
+        setInfo("Account created — check your email to confirm, then sign in.");
+        setMode("signin");
+      }
+    }
+    setSubmitting(false);
   }
 
   return (
     <div style={{ background: theme.bg, minHeight: "100vh", fontFamily: "Georgia, serif" }} className="flex items-center justify-center px-5">
-      <form onSubmit={handleLogin} className="w-full max-w-sm p-6 rounded-sm" style={{ background: theme.card, border: `1px solid ${theme.border}` }}>
+      <form onSubmit={handleSubmit} className="w-full max-w-sm p-6 rounded-sm" style={{ background: theme.card, border: `1px solid ${theme.border}` }}>
         <h1 className="text-2xl mb-2" style={{ color: theme.text }}>Allocation Ledger</h1>
-        {sent ? (
-          <p className="text-sm" style={{ color: theme.success }}>
-            Check your email for a sign-in link.
-          </p>
-        ) : (
-          <>
-            <p className="text-sm mb-4" style={{ color: theme.textMuted }}>
-              Sign in with your email — no password, just a link.
-            </p>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="w-full text-base bg-transparent border-b-2 py-2 mb-4"
-              style={{ borderColor: theme.text }}
-            />
-            <button type="submit" className="w-full px-4 py-2 rounded-sm text-sm" style={{ background: theme.accent, color: theme.accentText }}>
-              Send sign-in link
-            </button>
-            {error && <p className="text-sm mt-3" style={{ color: theme.danger }}>{error}</p>}
-          </>
-        )}
+        <p className="text-sm mb-4" style={{ color: theme.textMuted }}>
+          {mode === "signin" ? "Sign in with your email and password." : "Create an account with an email and password."}
+        </p>
+        <input
+          type="email"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@example.com"
+          className="w-full text-base bg-transparent border-b-2 py-2 mb-4"
+          style={{ borderColor: theme.text }}
+        />
+        <input
+          type="password"
+          required
+          minLength={6}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Password (min 6 characters)"
+          className="w-full text-base bg-transparent border-b-2 py-2 mb-4"
+          style={{ borderColor: theme.text }}
+        />
+        <button type="submit" disabled={submitting} className="w-full px-4 py-2 rounded-sm text-sm" style={{ background: theme.accent, color: theme.accentText }}>
+          {submitting ? "Please wait..." : mode === "signin" ? "Sign in" : "Create account"}
+        </button>
+        <button
+          type="button"
+          onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setError(""); setInfo(""); }}
+          className="w-full text-xs underline mt-3"
+          style={{ color: theme.textMuted }}
+        >
+          {mode === "signin" ? "New here? Create an account" : "Already have an account? Sign in"}
+        </button>
+        {info && <p className="text-sm mt-3" style={{ color: theme.success }}>{info}</p>}
+        {error && <p className="text-sm mt-3" style={{ color: theme.danger }}>{error}</p>}
       </form>
     </div>
   );
