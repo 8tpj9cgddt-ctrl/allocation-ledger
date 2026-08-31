@@ -102,6 +102,64 @@ function IconMoon(props) {
 }
 
 /* ---------- Login screen ---------- */
+/* ---------- Set new password (after clicking a reset link) ---------- */
+function SetNewPassword({ onDone, theme }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    if (password !== confirm) {
+      setError("Passwords don't match.");
+      return;
+    }
+    setSubmitting(true);
+    const { error } = await supabase.auth.updateUser({ password });
+    setSubmitting(false);
+    if (error) setError(error.message);
+    else onDone();
+  }
+
+  return (
+    <div style={{ background: theme.bg, minHeight: "100vh", fontFamily: "Georgia, serif" }} className="flex items-center justify-center px-5">
+      <form onSubmit={handleSubmit} className="w-full max-w-sm p-6 rounded-sm" style={{ background: theme.card, border: `1px solid ${theme.border}` }}>
+        <h1 className="text-2xl mb-2" style={{ color: theme.text }}>Set a new password</h1>
+        <p className="text-sm mb-4" style={{ color: theme.textMuted }}>Choose a new password for your account.</p>
+        <input
+          type="password"
+          required
+          minLength={6}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="New password (min 6 characters)"
+          className="w-full text-base bg-transparent border-b-2 py-2 mb-4"
+          style={{ borderColor: theme.text }}
+        />
+        <input
+          type="password"
+          required
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          placeholder="Confirm new password"
+          className="w-full text-base bg-transparent border-b-2 py-2 mb-4"
+          style={{ borderColor: theme.text }}
+        />
+        <button type="submit" disabled={submitting} className="w-full px-4 py-2 rounded-sm text-sm" style={{ background: theme.accent, color: theme.accentText }}>
+          {submitting ? "Saving..." : "Save new password"}
+        </button>
+        {error && <p className="text-sm mt-3" style={{ color: theme.danger }}>{error}</p>}
+      </form>
+    </div>
+  );
+}
+
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -133,6 +191,20 @@ function Login() {
       }
     }
     setSubmitting(false);
+  }
+
+  async function handleForgotPassword() {
+    if (!email) {
+      setError("Enter your email above first, then tap this link.");
+      return;
+    }
+    setError("");
+    setInfo("");
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    if (error) setError(error.message);
+    else setInfo("Check your email for a password reset link.");
   }
 
   return (
@@ -172,6 +244,11 @@ function Login() {
         >
           {mode === "signin" ? "New here? Create an account" : "Already have an account? Sign in"}
         </button>
+        {mode === "signin" && (
+          <button type="button" onClick={handleForgotPassword} className="w-full text-xs underline mt-2" style={{ color: theme.textMuted }}>
+            Forgot password?
+          </button>
+        )}
         {info && <p className="text-sm mt-3" style={{ color: theme.success }}>{info}</p>}
         {error && <p className="text-sm mt-3" style={{ color: theme.danger }}>{error}</p>}
       </form>
@@ -1359,12 +1436,16 @@ function Ledger({ userId }) {
 /* ---------- Root: handles auth state ---------- */
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = loading
+  const [recovery, setRecovery] = useState(false);
   const [darkMode] = useState(() => typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   const theme = darkMode ? THEMES.dark : THEMES.light;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => setSession(session));
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") setRecovery(true);
+      setSession(session);
+    });
     return () => listener.subscription.unsubscribe();
   }, []);
 
@@ -1374,6 +1455,10 @@ export default function App() {
         <div style={{ color: theme.accent, fontFamily: "Georgia, serif" }}>Loading…</div>
       </div>
     );
+  }
+
+  if (recovery) {
+    return <SetNewPassword onDone={() => setRecovery(false)} theme={theme} />;
   }
 
   return session ? <Ledger userId={session.user.id} /> : <Login />;
