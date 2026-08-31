@@ -26,18 +26,18 @@ const THEMES = {
     trackBg: "#E4DCC8",
   },
   dark: {
-    bg: "#1E1B16",
-    card: "#2A2620",
-    border: "#4A4438",
-    text: "#F0EAD8",
-    textMuted: "#B9AF98",
-    textFaint: "#8F8672",
-    accent: "#8FB4D9",
-    accentText: "#1E1B16",
+    bg: "#16181C",
+    card: "#202327",
+    border: "#3A3D42",
+    text: "#FFFFFF",
+    textMuted: "#B0B3B8",
+    textFaint: "#8A8D91",
+    accent: "#FFFFFF",
+    accentText: "#000000",
     danger: "#E08585",
     success: "#9BC08A",
-    flashBg: "#332C1F",
-    trackBg: "#3D372A",
+    flashBg: "#26292E",
+    trackBg: "#2E3136",
   },
 };
 
@@ -129,6 +129,7 @@ function SetNewPassword({ onDone, theme }) {
 
   return (
     <div style={{ background: theme.bg, minHeight: "100vh", fontFamily: "Georgia, serif" }} className="flex items-center justify-center px-5">
+      <style>{`input, select, textarea { color: inherit; } input::placeholder { color: inherit; opacity: 0.5; }`}</style>
       <form onSubmit={handleSubmit} className="w-full max-w-sm p-6 rounded-sm" style={{ background: theme.card, border: `1px solid ${theme.border}` }}>
         <h1 className="text-2xl mb-2" style={{ color: theme.text }}>Set a new password</h1>
         <p className="text-sm mb-4" style={{ color: theme.textMuted }}>Choose a new password for your account.</p>
@@ -167,7 +168,7 @@ function Login() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [darkMode] = useState(() => typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const [darkMode, setDarkMode] = useState(() => typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   const theme = darkMode ? THEMES.dark : THEMES.light;
 
   async function handleSubmit(e) {
@@ -209,6 +210,15 @@ function Login() {
 
   return (
     <div style={{ background: theme.bg, minHeight: "100vh", fontFamily: "Georgia, serif" }} className="flex items-center justify-center px-5">
+      <style>{`input, select, textarea { color: inherit; } input::placeholder { color: inherit; opacity: 0.5; }`}</style>
+      <button
+        onClick={() => setDarkMode(!darkMode)}
+        className="fixed top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center z-50"
+        style={{ background: theme.card, border: `1px solid ${theme.border}`, color: theme.text }}
+        aria-label="Toggle dark mode"
+      >
+        {darkMode ? <IconSun /> : <IconMoon />}
+      </button>
       <form onSubmit={handleSubmit} className="w-full max-w-sm p-6 rounded-sm" style={{ background: theme.card, border: `1px solid ${theme.border}` }}>
         <h1 className="text-2xl mb-2" style={{ color: theme.text }}>Allocation Ledger</h1>
         <p className="text-sm mb-4" style={{ color: theme.textMuted }}>
@@ -728,6 +738,8 @@ function Ledger({ userId }) {
         @keyframes flashIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
         .num { font-family: 'Courier New', Courier, monospace; font-variant-numeric: tabular-nums; }
         input:focus, button:focus, select:focus { outline: 2px solid #2F4550; outline-offset: 2px; }
+        input, select, textarea { color: inherit; }
+        input::placeholder { color: inherit; opacity: 0.5; }
       `}</style>
 
       <div className="fixed top-3 right-3 flex items-center gap-2 z-50">
