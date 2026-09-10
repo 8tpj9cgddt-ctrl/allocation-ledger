@@ -439,7 +439,7 @@ function Ledger({ userId }) {
   const goalProgress = goalCategoryIds.reduce((a, id) => a + (totals[id] || 0), 0);
 
   function pctSum(cats) {
-    return cats.reduce((a, c) => a + (Number(c.pct) || 0), 0);
+    return cats.filter((c) => c.mode !== "fixed").reduce((a, c) => a + (Number(c.pct) || 0), 0);
   }
 
   async function handleSplit(e) {
@@ -450,9 +450,20 @@ function Ledger({ userId }) {
       setError("Enter an amount above zero.");
       return;
     }
+    const fixedCats = categories.filter((c) => c.mode === "fixed");
+    const percentCats = categories.filter((c) => c.mode !== "fixed");
+    const fixedTotal = fixedCats.reduce((a, c) => a + (Number(c.fixed_amount) || 0), 0);
+    if (fixedTotal > amt) {
+      setError(`Fixed categories need $${formatMoney(fixedTotal)}, but you only entered $${formatMoney(amt)}.`);
+      return;
+    }
+    const remaining = amt - fixedTotal;
     const split = {};
-    categories.forEach((c) => {
-      split[c.id] = Math.round(((amt * c.pct) / 100) * 100) / 100;
+    fixedCats.forEach((c) => {
+      split[c.id] = Number(c.fixed_amount) || 0;
+    });
+    percentCats.forEach((c) => {
+      split[c.id] = Math.round(((remaining * c.pct) / 100) * 100) / 100;
     });
     const entry = {
       user_id: userId,
@@ -488,7 +499,7 @@ function Ledger({ userId }) {
     const nextColor = PALETTE.find((p) => !usedColors.includes(p)) || PALETTE[draftCats.length % PALETTE.length];
     setDraftCats([
       ...draftCats,
-      { id: `new_${Date.now()}`, label: "New category", note: "", pct: 0, color: nextColor, isNew: true, sort_order: draftCats.length },
+      { id: `new_${Date.now()}`, label: "New category", note: "", pct: 0, fixed_amount: 0, mode: "percent", color: nextColor, isNew: true, sort_order: draftCats.length },
     ]);
   }
 
@@ -507,20 +518,20 @@ function Ledger({ userId }) {
     }
     const sum = pctSum(draftCats);
     if (sum !== 100) {
-      setError(`Splits must add up to 100%. Currently ${sum}%.`);
+      setError(`Percent categories must add up to 100%. Currently ${sum}%.`);
       return;
     }
     setError("");
 
     const toInsert = draftCats
       .filter((c) => c.isNew)
-      .map((c) => ({ user_id: userId, label: c.label, note: c.note, pct: Number(c.pct), color: c.color, sort_order: c.sort_order }));
+      .map((c) => ({ user_id: userId, label: c.label, note: c.note, pct: Number(c.pct) || 0, fixed_amount: Number(c.fixed_amount) || 0, mode: c.mode || "percent", color: c.color, sort_order: c.sort_order }));
     const toUpdate = draftCats.filter((c) => !c.isNew);
     const removedIds = categories.filter((c) => !draftCats.find((d) => d.id === c.id)).map((c) => c.id);
 
     if (toInsert.length) await supabase.from("categories").insert(toInsert);
     for (const c of toUpdate) {
-      await supabase.from("categories").update({ label: c.label, note: c.note, pct: Number(c.pct), color: c.color }).eq("id", c.id);
+      await supabase.from("categories").update({ label: c.label, note: c.note, pct: Number(c.pct) || 0, fixed_amount: Number(c.fixed_amount) || 0, mode: c.mode || "percent", color: c.color }).eq("id", c.id);
     }
     if (removedIds.length) await supabase.from("categories").delete().in("id", removedIds);
 
@@ -552,9 +563,20 @@ function Ledger({ userId }) {
       setError("Enter an amount above zero.");
       return;
     }
+    const fixedCats = categories.filter((c) => c.mode === "fixed");
+    const percentCats = categories.filter((c) => c.mode !== "fixed");
+    const fixedTotal = fixedCats.reduce((a, c) => a + (Number(c.fixed_amount) || 0), 0);
+    if (fixedTotal > amt) {
+      setError(`Fixed categories need ${symbol}${formatMoney(fixedTotal)}, but this entry is only ${symbol}${formatMoney(amt)}.`);
+      return;
+    }
+    const remaining = amt - fixedTotal;
     const split = {};
-    categories.forEach((c) => {
-      split[c.id] = Math.round(((amt * c.pct) / 100) * 100) / 100;
+    fixedCats.forEach((c) => {
+      split[c.id] = Number(c.fixed_amount) || 0;
+    });
+    percentCats.forEach((c) => {
+      split[c.id] = Math.round(((remaining * c.pct) / 100) * 100) / 100;
     });
     const { error: updateError } = await supabase
       .from("entries")
@@ -942,9 +964,25 @@ function Ledger({ userId }) {
                         className="flex-1 min-w-[100px] text-sm bg-transparent border-b py-1" style={{ borderColor: theme.border }} />
                       <input type="text" value={c.note || ""} onChange={(e) => updateDraft(c.id, "note", e.target.value)} placeholder="note (optional)"
                         className="flex-1 min-w-[100px] text-xs bg-transparent border-b py-1" style={{ borderColor: theme.border, color: theme.textMuted }} />
-                      <input type="number" min="0" max="100" value={c.pct} onChange={(e) => updateDraft(c.id, "pct", e.target.value)}
-                        className="w-16 num bg-transparent border-b-2 py-1" style={{ borderColor: theme.text }} />
-                      <span className="text-sm" style={{ color: theme.textMuted }}>%</span>
+                      <select
+                        value={c.mode || "percent"}
+                        onChange={(e) => updateDraft(c.id, "mode", e.target.value)}
+                        className="text-xs bg-transparent border-b py-1"
+                        style={{ borderColor: theme.border }}
+                      >
+                        <option value="percent">%</option>
+                        <option value="fixed">{symbol} fixed</option>
+                      </select>
+                      {c.mode === "fixed" ? (
+                        <input type="number" min="0" step="0.01" value={c.fixed_amount ?? 0} onChange={(e) => updateDraft(c.id, "fixed_amount", e.target.value)}
+                          className="w-20 num bg-transparent border-b-2 py-1" style={{ borderColor: theme.text }} />
+                      ) : (
+                        <>
+                          <input type="number" min="0" max="100" value={c.pct} onChange={(e) => updateDraft(c.id, "pct", e.target.value)}
+                            className="w-16 num bg-transparent border-b-2 py-1" style={{ borderColor: theme.text }} />
+                          <span className="text-sm" style={{ color: theme.textMuted }}>%</span>
+                        </>
+                      )}
                       <button onClick={() => removeDraftCategory(c.id)} className="text-xs px-2" style={{ color: theme.danger }}>✕</button>
                     </div>
                   ))}
@@ -952,7 +990,7 @@ function Ledger({ userId }) {
                   {error && <div className="text-sm" style={{ color: theme.danger }}>{error}</div>}
                   <div className="flex items-center justify-between pt-2 border-t" style={{ borderColor: theme.border }}>
                     <span className="text-xs" style={{ color: draftSum === 100 ? theme.success : theme.danger }}>
-                      Sum: {draftSum}% {draftSum === 100 ? "✓" : "— needs to be 100%"}
+                      Percent categories sum: {draftSum}% {draftSum === 100 ? "✓" : "— needs to be 100%"}
                     </span>
                     <button onClick={saveCategories} className="px-4 py-1.5 rounded-sm text-sm" style={{ background: theme.accent, color: theme.accentText }}>
                       Save
@@ -968,7 +1006,9 @@ function Ledger({ userId }) {
                         <div className="flex justify-between text-sm mb-1">
                           <span>
                             <span style={{ color: c.color, fontWeight: 600 }}>{c.label}</span>{" "}
-                            <span style={{ color: theme.textMuted }}>{c.note ? `· ${c.note} ` : ""}· {c.pct}%</span>
+                            <span style={{ color: theme.textMuted }}>
+                              {c.note ? `· ${c.note} ` : ""}· {c.mode === "fixed" ? `${symbol}${formatMoney(c.fixed_amount)} fixed` : `${c.pct}%`}
+                            </span>
                           </span>
                           <span className="num">{symbol}{formatMoney(totals[c.id] || 0)}</span>
                         </div>
